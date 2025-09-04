@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Clean the Park 🌳🗑️</title>
+<style>
+  body {
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: Arial, sans-serif;
+    color: white;
+    text-shadow: 1px 1px 4px black;
+    background: linear-gradient(135deg, #56ab2f, #a8e063);
+    overflow: hidden;
+  }
+  #game {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+  h1 {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 2em;
+  }
+  #bin {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    font-size: 3em;
+    transition: transform 0.2s;
+    border-radius: 12px;
+    background-color: rgba(255,255,255,0.15);
+    padding: 5px;
+  }
+  .bin-animate {
+    transform: scale(1.3);
+  }
+  .trash {
+    position: absolute;
+    cursor: grab;
+    user-select: none;
+    transition: transform 0.2s;
+  }
+  .wiggle {
+    animation: wiggle 0.3s infinite;
+  }
+  @keyframes wiggle {
+    0% { transform: rotate(-5deg); }
+    50% { transform: rotate(5deg); }
+    100% { transform: rotate(-5deg); }
+  }
+  #level, #score, #timer, #recycled {
+    position: absolute;
+    left: 20px;
+    font-size: 1.2em;
+  }
+  #level { top: 50px; }
+  #score { top: 80px; }
+  #timer { top: 110px; }
+  #recycled { top: 140px; }
+  #message {
+    position: absolute;
+    top: 180px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.4em;
+    text-align: center;
+  }
+  #stopBtn, #resumeBtn {
+    position: absolute;
+    bottom: 20px;
+    padding: 8px 16px;
+    font-size: 1em;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    background-color: rgba(255,255,255,0.3);
+    color: white;
+    text-shadow: 1px 1px 2px black;
+    transition: background-color 0.2s;
+  }
+  #stopBtn:hover, #resumeBtn:hover { background-color: rgba(255,255,255,0.5); }
+  #stopBtn { left: 20px; }
+  #resumeBtn { left: 140px; }
+  #paw {
+    position: absolute;
+    font-size: 3em;
+    display: none;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="game">
+  <h1>Clean the Park! 🌳🗑️</h1>
+  <div id="bin">🗑️</div>
+  <div id="level">Level: 1</div>
+  <div id="score">Score: 0</div>
+  <div id="timer">Time: 30</div>
+  <div id="recycled">Recycled: 0</div>
+  <div id="message">Click anywhere to start!</div>
+  <button id="stopBtn">Stop Game</button>
+  <button id="resumeBtn">Resume Game</button>
+  <div id="paw">🐾</div>
+</div>
+
+<script>
+const game = document.getElementById("game");
+const bin = document.getElementById("bin");
+const levelEl = document.getElementById("level");
+const scoreEl = document.getElementById("score");
+const timerEl = document.getElementById("timer");
+const recycledEl = document.getElementById("recycled");
+const messageEl = document.getElementById("message");
+const stopBtn = document.getElementById("stopBtn");
+const resumeBtn = document.getElementById("resumeBtn");
+const paw = document.getElementById("paw");
+
+const trashTypes = ["🍌","🍕","💩","🥑","🤡","🥤","🍔","🍎","🍩"];
+
+let state = {
+  level: 1,
+  score: 0,
+  recycled: 0,
+  trash: [],
+  running: false,
+  mouse: {x:0,y:0},
+  animationId: null,
+  timerId: null,
+  nextLevelTimeout: null,
+  timeLeft: 30,
+  musicStarted: false
+};
+
+// --- Sound Engine ---
+const Sounds = {
+  amestart: new Audio("start.mp3"),
+  drop: new Audio("drop.mp3"),
+  level: new Audio("level.mp3"),
+  music: new Audio("bg-music.mp3")
+};
+Sounds.music.loop = true;
+
+function playSound(name){
+  if(Sounds[name]){
+    const snd = Sounds[name].cloneNode();
+    snd.load();
+    snd.play().catch(e=>console.log("Sound play error:", e));
+  }
+}
+function playMusic(){
+  if(!state.musicStarted){
+    Sounds.music.play().catch(e=>console.log("Music error:", e));
+    state.musicStarted = true;
+  }
+}
+
+function rand(min,max){ return Math.random()*(max-min)+min; }
+function distance(x1,y1,x2,y2){ return Math.hypot(x2-x1,y2-y1); }
+
+function createTrash(num){
+  for(let i=0;i<num;i++){
+    const el = document.createElement("div");
+    el.className="trash";
+    const emoji = trashTypes[Math.floor(Math.random()*trashTypes.length)];
+    el.textContent = emoji;
+    const size = rand(24, 48);
+    el.style.fontSize = size+"px";
+    game.appendChild(el);
+
+    const speedFactor = 1 + state.level * 0.35; // speed grows faster each level
+
+    let t = {
+      el,
+      x: rand(50, window.innerWidth-100),
+      y: rand(150, window.innerHeight-100),
+      vx: rand(-0.3,0.3) * speedFactor,
+      vy: rand(-0.3,0.3) * speedFactor,
+      size
+    };
+
+    el.style.left = t.x+"px";
+    el.style.top = t.y+"px";
+
+    el.draggable = true;
+    el.addEventListener("dragstart",(e)=>{
+      e.dataTransfer.setData("text/plain",state.trash.indexOf(t));
+    });
+
+    // wiggle effect 
+    if(Math.random()<0.3){
+      el.classList.add("wiggle");
+    }
+
+    state.trash.push(t);
+  }
+}
+
+function moveTrash(){
+  if(!state.running) return;
+
+  state.trash.forEach(t=>{
+    t.x += t.vx;
+    t.y += t.vy;
+
+    if(t.x<0||t.x>window.innerWidth-40) t.vx*=-1;
+    if(t.y<100||t.y>window.innerHeight-40) t.vy*=-1;
+
+    let d = distance(t.x,t.y,state.mouse.x,state.mouse.y);
+    if(d<150){
+      let dx = t.x-state.mouse.x;
+      let dy = t.y-state.mouse.y;
+      t.vx += dx/d*0.05;
+      t.vy += dy/d*0.05;
+    }
+
+    t.vx = Math.max(-1.5, Math.min(1.5, t.vx));
+    t.vy = Math.max(-1.5, Math.min(1.5, t.vy));
+
+    t.el.style.left = t.x+"px";
+    t.el.style.top = t.y+"px";
+  });
+
+  // 🐾 chaos event
+  if(Math.random()<0.002){
+    triggerChaos();
+  }
+
+  state.animationId = requestAnimationFrame(moveTrash);
+}
+
+function startTimer(){
+  clearInterval(state.timerId);
+  state.timeLeft = Math.max(10, 30 - (state.level-1)*2);
+  timerEl.textContent = `Time: ${state.timeLeft}`;
+  state.timerId = setInterval(()=>{
+    if(!state.running) return;
+    state.timeLeft--;
+    timerEl.textContent = `Time: ${state.timeLeft}`;
+    if(state.timeLeft <= 0){
+      stopGame(`Time's up! Level reached: ${state.level}, Score: ${state.score}, Recycled: ${state.recycled}`);
+    }
+  }, 1000);
+}
+
+function stopGame(msg){
+  state.running = false;
+  cancelAnimationFrame(state.animationId);
+  clearInterval(state.timerId);
+  if(state.nextLevelTimeout){
+    clearTimeout(state.nextLevelTimeout);
+    state.nextLevelTimeout = null;
+  }
+  messageEl.textContent = msg || `Game stopped! Level: ${state.level}, Score: ${state.score}, Recycled: ${state.recycled}`;
+}
+
+function resumeGame(){
+  if(!state.running){
+    state.running = true;
+    messageEl.textContent = "";
+    moveTrash();
+    startTimer();
+  }
+}
+
+// --- Bin drop ---
+bin.addEventListener("dragover", e=> e.preventDefault());
+bin.addEventListener("drop", e=>{
+  if(!state.running) return;
+  let idx = e.dataTransfer.getData("text/plain");
+  let t = state.trash[idx];
+  if(t){
+    playSound("drop");
+    bin.classList.add("bin-animate");
+    setTimeout(()=>bin.classList.remove("bin-animate"),200);
+
+    t.el.remove();
+    state.trash.splice(idx,1);
+    state.score += (t.size>36 ? 2 : 1);
+    state.recycled++;
+    scoreEl.textContent = "Score: "+state.score;
+    recycledEl.textContent = "Recycled: "+state.recycled;
+
+    if(state.trash.length===0){
+      state.level++;
+      playSound("level");
+      levelEl.textContent = "Level: "+state.level;
+      messageEl.textContent = "Level up! New trash incoming...";
+
+      // Speed up all existing trash
+      state.trash.forEach(t => {
+        t.vx *= 1.2;
+        t.vy *= 1.2;
+      });
+
+      state.nextLevelTimeout = setTimeout(()=>{
+        if(state.running){
+          createTrash(3+state.level);
+          messageEl.textContent="";
+          startTimer();
+        }
+        state.nextLevelTimeout = null;
+      },1500);
+    }
+  }
+});
+
+// --- Chaos event with 🐾 ---
+function triggerChaos(){
+  paw.style.left = rand(50, window.innerWidth-100)+"px";
+  paw.style.top = rand(100, window.innerHeight-100)+"px";
+  paw.style.display="block";
+  setTimeout(()=>paw.style.display="none",800);
+
+  state.trash.forEach(t=>{
+    t.x = rand(50, window.innerWidth-100);
+    t.y = rand(150, window.innerHeight-100);
+  });
+}
+
+// --- Game start ---
+game.addEventListener("click", ()=>{
+  if(!state.running && state.trash.length === 0){
+    state.running = true;
+    playSound("amestart");
+    playMusic();
+    messageEl.textContent="";
+    createTrash(3);
+    moveTrash();
+    startTimer();
+  }
+});
+
+// --- Stop & Resume buttons ---
+stopBtn.addEventListener("click", () => stopGame());
+resumeBtn.addEventListener("click", resumeGame);
+
+document.addEventListener("mousemove", e=>{
+  state.mouse.x = e.clientX;
+  state.mouse.y = e.clientY;
+});
+</script>
+</body>
+</html>
