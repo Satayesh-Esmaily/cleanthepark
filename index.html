@@ -175,7 +175,7 @@ function createTrash(num){
     el.style.fontSize = size+"px";
     game.appendChild(el);
 
-    const speedFactor = 1 + state.level * 0.35; // speed grows faster each level
+    const speedFactor = 1 + state.level * 0.35;
 
     let t = {
       el,
@@ -194,7 +194,6 @@ function createTrash(num){
       e.dataTransfer.setData("text/plain",state.trash.indexOf(t));
     });
 
-    // wiggle effect 
     if(Math.random()<0.3){
       el.classList.add("wiggle");
     }
@@ -228,7 +227,6 @@ function moveTrash(){
     t.el.style.top = t.y+"px";
   });
 
-  // 🐾 chaos event
   if(Math.random()<0.002){
     triggerChaos();
   }
@@ -270,49 +268,55 @@ function resumeGame(){
   }
 }
 
-// --- Bin drop ---
+// --- Bin drop (Desktop) ---
 bin.addEventListener("dragover", e=> e.preventDefault());
 bin.addEventListener("drop", e=>{
   if(!state.running) return;
   let idx = e.dataTransfer.getData("text/plain");
   let t = state.trash[idx];
   if(t){
-    playSound("drop");
-    bin.classList.add("bin-animate");
-    setTimeout(()=>bin.classList.remove("bin-animate"),200);
-
-    t.el.remove();
-    state.trash.splice(idx,1);
-    state.score += (t.size>36 ? 2 : 1);
-    state.recycled++;
-    scoreEl.textContent = "Score: "+state.score;
-    recycledEl.textContent = "Recycled: "+state.recycled;
-
-    if(state.trash.length===0){
-      state.level++;
-      playSound("level");
-      levelEl.textContent = "Level: "+state.level;
-      messageEl.textContent = "Level up! New trash incoming...";
-
-      // Speed up all existing trash
-      state.trash.forEach(t => {
-        t.vx *= 1.2;
-        t.vy *= 1.2;
-      });
-
-      state.nextLevelTimeout = setTimeout(()=>{
-        if(state.running){
-          createTrash(3+state.level);
-          messageEl.textContent="";
-          startTimer();
-        }
-        state.nextLevelTimeout = null;
-      },1500);
-    }
+    handleTrashDrop(t);
   }
 });
 
-// --- Chaos event with 🐾 ---
+// --- Handle trash dropped in bin ---
+function handleTrashDrop(t){
+  playSound("drop");
+  bin.classList.add("bin-animate");
+  setTimeout(()=>bin.classList.remove("bin-animate"),200);
+
+  t.el.remove();
+  const idx = state.trash.indexOf(t);
+  if (idx > -1) state.trash.splice(idx,1);
+
+  state.score += (t.size>36 ? 2 : 1);
+  state.recycled++;
+  scoreEl.textContent = "Score: "+state.score;
+  recycledEl.textContent = "Recycled: "+state.recycled;
+
+  if(state.trash.length===0){
+    state.level++;
+    playSound("level");
+    levelEl.textContent = "Level: "+state.level;
+    messageEl.textContent = "Level up! New trash incoming...";
+
+    state.trash.forEach(t => {
+      t.vx *= 1.2;
+      t.vy *= 1.2;
+    });
+
+    state.nextLevelTimeout = setTimeout(()=>{
+      if(state.running){
+        createTrash(3+state.level);
+        messageEl.textContent="";
+        startTimer();
+      }
+      state.nextLevelTimeout = null;
+    },1500);
+  }
+}
+
+// --- Chaos event ---
 function triggerChaos(){
   paw.style.left = rand(50, window.innerWidth-100)+"px";
   paw.style.top = rand(100, window.innerHeight-100)+"px";
@@ -338,13 +342,51 @@ game.addEventListener("click", ()=>{
   }
 });
 
-// --- Stop & Resume buttons ---
+// --- Stop & Resume ---
 stopBtn.addEventListener("click", () => stopGame());
 resumeBtn.addEventListener("click", resumeGame);
 
 document.addEventListener("mousemove", e=>{
   state.mouse.x = e.clientX;
   state.mouse.y = e.clientY;
+});
+
+// --- Mobile touch support ---
+let draggingTrash = null;
+
+game.addEventListener("touchstart", e => {
+  if (!state.running) return;
+  const touch = e.touches[0];
+  const target = document.elementFromPoint(touch.clientX, touch.clientY);
+  if (target && target.classList.contains("trash")) {
+    draggingTrash = state.trash.find(t => t.el === target);
+  }
+});
+
+game.addEventListener("touchmove", e => {
+  if (draggingTrash) {
+    const touch = e.touches[0];
+    draggingTrash.x = touch.clientX - 20;
+    draggingTrash.y = touch.clientY - 20;
+    draggingTrash.el.style.left = draggingTrash.x + "px";
+    draggingTrash.el.style.top = draggingTrash.y + "px";
+  }
+});
+
+game.addEventListener("touchend", e => {
+  if (draggingTrash) {
+    const binRect = bin.getBoundingClientRect();
+    const trashRect = draggingTrash.el.getBoundingClientRect();
+    if (
+      trashRect.left < binRect.right &&
+      trashRect.right > binRect.left &&
+      trashRect.top < binRect.bottom &&
+      trashRect.bottom > binRect.top
+    ) {
+      handleTrashDrop(draggingTrash);
+    }
+    draggingTrash = null;
+  }
 });
 </script>
 </body>
